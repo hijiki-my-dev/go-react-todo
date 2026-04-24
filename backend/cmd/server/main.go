@@ -25,6 +25,25 @@ var todos = []Todo{
 var nextID int = 3
 
 // ハンドラーを定義
+func createTodoHandler(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Title string `json:"title"`
+	}
+
+	// 例外処理
+	err := json.NewDecoder(r.Body).Decode(&body)
+	if err != nil {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+
+	// todoを追加
+	todo := Todo{ID: nextID, Title: body.Title, Done: false}
+	nextID++
+	todos = append(todos, todo)
+	writeJson(w, http.StatusCreated, todo)
+}
+
 func getTopHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "Hello World!")
 }
@@ -32,7 +51,6 @@ func getTopHandler(w http.ResponseWriter, r *http.Request) {
 func getTodosHandler(w http.ResponseWriter, r *http.Request) {
 	// io.WriteString(w, "Get todos")
 	writeJson(w, http.StatusOK, todos)
-
 }
 
 // Json形式でレスポンスを定義する
@@ -50,5 +68,6 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", getTopHandler)
 	mux.HandleFunc("GET /todos", getTodosHandler)
+	mux.HandleFunc("POST /todos", createTodoHandler)
 	http.ListenAndServe(":8080", mux)
 }
