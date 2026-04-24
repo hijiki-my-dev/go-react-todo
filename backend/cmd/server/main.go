@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	// "fmt"
 	"io"
 	"log"
 	"net/http"
@@ -16,7 +15,7 @@ type Todo struct {
 	Done  bool   `json:"done"`
 }
 
-// とりあえず配列でDBを表現
+// スライスでDBを表現。Goの場合、配列は宣言時に長さを定義するもの。可変長のものはスライスと呼ばれる
 var todos = []Todo{
 	{ID: 1, Title: "牛乳を買う", Done: false},
 	{ID: 2, Title: "Goを勉強する", Done: false},
@@ -30,6 +29,7 @@ func getTopHandler(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "Hello World!")
 }
 
+// 引数はお決まりのテンプレート
 func createTodoHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title string `json:"title"`
@@ -57,6 +57,7 @@ func getTodoHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	for _, t := range todos {
 		if strconv.Itoa(t.ID) == id {
+
 			writeJson(w, http.StatusOK, t)
 			return
 		}
@@ -65,6 +66,8 @@ func getTodoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateTodoHandler(w http.ResponseWriter, r *http.Request) {
+	// titleとdoneの片方だけが来た場合でも機能させたい。
+	// ポインタを設定することで、ポインタがnilかどうかで変数の存在確認を行うことができる
 	var body struct {
 		Title *string `json:"title"`
 		Done  *bool   `json:"done"`
@@ -78,8 +81,8 @@ func updateTodoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.PathValue("id")
-	for i, t := range todos {
-		if strconv.Itoa(t.ID) == id {
+	for i, t := range todos { // デフォでpythonのenumerateのように動作
+		if strconv.Itoa(t.ID) == id { // t.IDを型変換
 			if body.Title != nil {
 				todos[i].Title = *body.Title
 			}
@@ -91,6 +94,17 @@ func updateTodoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+}
+
+func deleteTodoHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	for i, t := range todos {
+		if strconv.Itoa(t.ID) == id {
+			todos = todos[:i+copy(todos[i:], todos[i+1:])]
+			writeJson(w, http.StatusOK, t)
+			return
+		}
+	}
 }
 
 // Json形式でレスポンスを定義する
@@ -110,5 +124,6 @@ func main() {
 	mux.HandleFunc("GET /todo/{id}", getTodoHandler)
 	mux.HandleFunc("POST /todos", createTodoHandler)
 	mux.HandleFunc("PATCH /todo/{id}", updateTodoHandler)
+	mux.HandleFunc("DELETE /todo/{id}", deleteTodoHandler)
 	http.ListenAndServe(":8080", mux)
 }
