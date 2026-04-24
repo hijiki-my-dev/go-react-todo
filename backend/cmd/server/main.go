@@ -121,9 +121,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", getTopHandler)
 	mux.HandleFunc("GET /todos", getTodosHandler)
-	mux.HandleFunc("GET /todo/{id}", getTodoHandler)
+	mux.HandleFunc("GET /todos/{id}", getTodoHandler)
 	mux.HandleFunc("POST /todos", createTodoHandler)
-	mux.HandleFunc("PATCH /todo/{id}", updateTodoHandler)
-	mux.HandleFunc("DELETE /todo/{id}", deleteTodoHandler)
+	mux.HandleFunc("PATCH /todos/{id}", updateTodoHandler)
+	mux.HandleFunc("DELETE /todos/{id}", deleteTodoHandler)
 	http.ListenAndServe(":8080", mux)
 }

@@ -18,12 +18,12 @@ curl -X POST http://localhost:8080/todos \
   -d '{"title": "散歩する"}'
 
 # 編集
-curl -X PATCH http://localhost:8080/todo/2 \
+curl -X PATCH http://localhost:8080/todos/2 \
   -H "Content-Type: application/json" \
   -d '{"title": "新しいタイトル", "done": true}'
 
 # 削除
-curl -X DELETE http://localhost:8080/todo/2
+curl -X DELETE http://localhost:8080/todos/2
 
 # 個別取得
 curl http://localhost:8080/todos/1
