@@ -1,11 +1,15 @@
 package main
 
 import (
+	// "database/sql"
 	"encoding/json"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
+	// _ "github.com/lib/pq"
 )
 
 // Todoの形式を定義
@@ -116,6 +120,14 @@ func writeJson(w http.ResponseWriter, status int, v any) {
 
 func main() {
 	log.Println("Hello Logging!")
+
+	// DBマイグレーション
+	dsn := "host=todo-db user=todo_user password=postgres dbname=todo port=5432 sslmode=disable TimeZone=Asia/Tokyo"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("failed to connect database: ", err)
+	}
+	db.AutoMigrate(&Todo{})
 
 	// サーバー起動
 	mux := http.NewServeMux()
