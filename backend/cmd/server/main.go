@@ -151,6 +151,20 @@ func writeJson(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// フロントとの接続用
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	log.Println("Hello Logging!")
 
@@ -171,5 +185,5 @@ func main() {
 	mux.HandleFunc("POST /todos", h.createTodo)
 	mux.HandleFunc("PATCH /todos/{id}", h.updateTodo)
 	mux.HandleFunc("DELETE /todos/{id}", h.deleteTodo)
-	http.ListenAndServe(":8080", mux)
+	http.ListenAndServe(":8080", corsMiddleware(mux))
 }
