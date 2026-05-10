@@ -29,6 +29,11 @@ func (h *Handler) getTop(w http.ResponseWriter, r *http.Request) {
 // 引数はお決まりのテンプレート
 // レシーバを活用することで、ハンドラーと紐づいた関数となる
 func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
+	todos, err := gorm.G[Todo](h.db).Find(r.Context())
+	if len(todos) > 200 {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": "Todo list is full."})
+		return
+	}
 	var body struct {
 		Title string `json:"title"`
 	}
@@ -41,7 +46,7 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 
 	// todoを追加
 	todo := Todo{Title: body.Title, Done: false}
-	err := gorm.G[Todo](h.db).Create(r.Context(), &todo)
+	err = gorm.G[Todo](h.db).Create(r.Context(), &todo)
 	if err != nil {
 		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
