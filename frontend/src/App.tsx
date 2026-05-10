@@ -59,6 +59,14 @@ function App() {
     if (e.key === 'Escape') setEditingId(null)
   }
 
+  function deleteTodo(todoId: number) {
+    axios.delete(`/todos/${todoId}`)
+      .then(response => {
+        console.log(`削除: ${response.data}`)
+        setTodos(todos.filter(todo => todo.id !== todoId))
+      })
+  }
+
   useEffect(() => {
     axios.get('/todos')
       .then(response => {
@@ -80,10 +88,10 @@ function App() {
             </label>
             <button type='submit'>追加</button>
           </form>
-          <p>タスク一覧</p>
-          <p>ダブルクリックで編集可能</p>
+          <p>タスク一覧（ダブルクリックで編集可能）</p>
           <ul>
             {todos.map(todo => (
+              <>
               <li key={todo.id}>
                 {editingId === todo.id ? (
                   // 編集モード: inputを表示
@@ -99,6 +107,8 @@ function App() {
                   <span onDoubleClick={() => startEditing(todo)}>{todo.title}</span>
                 )}
               </li>
+              <button type='button' onClick={() => deleteTodo(todo.id)}>削除</button>
+              </>
             ))}
           </ul>
         </div>
