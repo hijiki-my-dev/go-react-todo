@@ -5,6 +5,9 @@ import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import './App.css'
 
+// GitHub Actionsのシークレットに、バックエンドのURLを設定することで注入
+axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL ?? ''
+
 type Todo = {
     id: number
     title: string
@@ -23,7 +26,7 @@ function App() {
     console.log(`送信するデータ: ${title}`)
     const post = {title}
 
-    axios.post('todos', post)
+    axios.post('/todos', post)
         .then(response => {
             console.log(`Todo作成: ${response.data}`)
             setTodos(prev => [...prev, response.data])

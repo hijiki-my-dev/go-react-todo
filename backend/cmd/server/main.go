@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 )
 
@@ -157,9 +159,9 @@ func writeJson(w http.ResponseWriter, status int, v any) {
 }
 
 // フロントとの接続用
-func corsMiddleware(next http.Handler) http.Handler {
+func corsMiddleware(origin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
@@ -173,14 +175,25 @@ func corsMiddleware(next http.Handler) http.Handler {
 func main() {
 	log.Println("Hello Logging!")
 
+	godotenv.Load()
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	// DBマイグレーション
-	dsn := "host=todo-db user=todo_user password=postgres dbname=todo port=5432 sslmode=disable TimeZone=Asia/Tokyo"
+	// dsn := "host=todo-db user=todo_user password=postgres dbname=todo port=5432 sslmode=disable TimeZone=Asia/Tokyo"
+	dsn := os.Getenv("DATABASE_URL")
+	log.Println(dsn)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatal("failed to connect database: ", err)
 	}
 	h := &Handler{db: db}
 	h.db.AutoMigrate(&Todo{})
+
+	corsOrigin := os.Getenv("CORS_ORIGIN")
 
 	// サーバー起動
 	mux := http.NewServeMux()
@@ -190,5 +203,5 @@ func main() {
 	mux.HandleFunc("POST /todos", h.createTodo)
 	mux.HandleFunc("PATCH /todos/{id}", h.updateTodo)
 	mux.HandleFunc("DELETE /todos/{id}", h.deleteTodo)
-	http.ListenAndServe(":8080", corsMiddleware(mux))
+	http.ListenAndServe(":"+port, corsMiddleware(corsOrigin, mux))
 }
