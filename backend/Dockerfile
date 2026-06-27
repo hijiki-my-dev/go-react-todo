@@ -1,12 +1,20 @@
-FROM golang:1.26
+# 第一ステージ
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
-
-RUN go install github.com/air-verse/air@latest
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-CMD ["air", "-c", ".air.toml"]
+RUN CGO_ENABLED=0 GOOS=linux go build -o main cmd/server
+
+# 第二ステージ
+FROM alpine:latest
+
+WORKDIR /app
+
+COPY --from=builder /app/main .
+
+CMD ["./main"]
