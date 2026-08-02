@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
 import './App.css'
 
 // GitHub Actionsのシークレットに、バックエンドのURLを設定することで注入
