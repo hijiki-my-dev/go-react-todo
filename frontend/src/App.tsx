@@ -1,119 +1,118 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useState, useEffect } from 'react'
+import axios from 'axios'
 import './App.css'
 
+// GitHub Actionsのシークレットに、バックエンドのURLを設定することで注入
+axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL ?? ''
+
+type Todo = {
+    id: number
+    title: string
+    done: boolean
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [todos, setTodos] = useState<Todo[]>([])
+  const [title, setTitle] = useState('')
+  // 編集中のTodo IDと入力中のタイトルを管理するstate
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+
+  function handleSubmit(e: React.SubmitEvent<HTMLFormElement>){
+    e.preventDefault();
+    console.log(`送信するデータ: ${title}`)
+    const post = {title}
+
+    axios.post('/todos', post)
+        .then(response => {
+            console.log(`Todo作成: ${response.data}`)
+            setTodos(prev => [...prev, response.data])
+            setTitle('')
+        })
+        .catch(error => {
+            console.error('投稿作成エラー:', error);
+        })
+  }
+
+  // ダブルクリックで編集モードに入る
+  function startEditing(todo: Todo) {
+    setEditingId(todo.id)
+    setEditingTitle(todo.title)
+  }
+
+  // 編集を確定してAPIに送信する
+  function commitEdit(id: number) {
+    if (editingTitle.trim() === '') return
+    axios.patch(`/todos/${id}`, { title: editingTitle })
+      .then(response => {
+        setTodos(prev => prev.map(t => t.id === id ? response.data : t))
+        setEditingId(null)
+      })
+      .catch(error => {
+        console.error('更新エラー:', error)
+      })
+  }
+
+  // Enterで確定、Escapeでキャンセル
+  function handleEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>, id: number) {
+    if (e.key === 'Enter') commitEdit(id)
+    if (e.key === 'Escape') setEditingId(null)
+  }
+
+  function deleteTodo(todoId: number) {
+    axios.delete(`/todos/${todoId}`)
+      .then(response => {
+        console.log(`削除: ${response.data}`)
+        setTodos(todos.filter(todo => todo.id !== todoId))
+      })
+  }
+
+  useEffect(() => {
+    axios.get('/todos')
+      .then(response => {
+        setTodos(response.data);
+      })
+      .catch(error => {
+        console.error('データ取得エラー:', error);
+      });
+  }, [])
 
   return (
     <>
       <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
         <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
+          <h1>Go×React Todo アプリ</h1>
+          <form onSubmit={handleSubmit}>
+            <label>
+                新規Todo: <input name="newTodo" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </label>
+            <button type='submit'>追加</button>
+          </form>
+          <p>タスク一覧（ダブルクリックで編集可能）</p>
           <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
+            {todos.map(todo => (
+              <>
+              <li key={todo.id}>
+                {editingId === todo.id ? (
+                  // 編集モード: inputを表示
+                  <input
+                    autoFocus
+                    value={editingTitle}
+                    onChange={e => setEditingTitle(e.target.value)}
+                    onBlur={() => commitEdit(todo.id)}
+                    onKeyDown={e => handleEditKeyDown(e, todo.id)}
+                  />
+                ) : (
+                  // 通常モード: ダブルクリックで編集モードへ
+                  <span onDoubleClick={() => startEditing(todo)}>{todo.title}</span>
+                )}
+              </li>
+              <button type='button' onClick={() => deleteTodo(todo.id)}>削除</button>
+              </>
+            ))}
           </ul>
         </div>
       </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
     </>
   )
 }

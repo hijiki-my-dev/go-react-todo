@@ -24,6 +24,10 @@ backend/tmp/
 backend/coverage.out
 backend/*.test
 
+# Secrets
+github-actions-key.json
+firebase-sa-key.json
+
 # IDE/editor
 .vscode/
 .idea/

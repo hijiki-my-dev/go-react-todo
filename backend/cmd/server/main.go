@@ -2,70 +2,89 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 )
 
 // Todoの形式を定義
 type Todo struct {
-	ID    int    `json:"id"`
+	ID    uint   `json:"id"    gorm:"primaryKey"`
 	Title string `json:"title"`
 	Done  bool   `json:"done"`
 }
 
-// スライスでDBを表現。Goの場合、配列は宣言時に長さを定義するもの。可変長のものはスライスと呼ばれる
-var todos = []Todo{
-	{ID: 1, Title: "牛乳を買う", Done: false},
-	{ID: 2, Title: "Goを勉強する", Done: false},
+type Handler struct {
+	db *gorm.DB
 }
 
-// インデックス
-var nextID int = 3
-
 // ハンドラーを定義
-func getTopHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) getTop(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "Hello World!")
 }
 
 // 引数はお決まりのテンプレート
-func createTodoHandler(w http.ResponseWriter, r *http.Request) {
+// レシーバを活用することで、ハンドラーと紐づいた関数となる
+func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
+	todos, err := gorm.G[Todo](h.db).Find(r.Context())
+	if len(todos) > 200 {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": "Todo list is full."})
+		return
+	}
 	var body struct {
 		Title string `json:"title"`
 	}
 
 	// データ受信・例外処理
-	err := json.NewDecoder(r.Body).Decode(&body)
-	if err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
 
 	// todoを追加
-	todo := Todo{ID: nextID, Title: body.Title, Done: false}
-	nextID++
-	todos = append(todos, todo)
+	todo := Todo{Title: body.Title, Done: false}
+	err = gorm.G[Todo](h.db).Create(r.Context(), &todo)
+	if err != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	writeJson(w, http.StatusCreated, todo)
 }
 
-func getTodosHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) getTodos(w http.ResponseWriter, r *http.Request) {
+	todos, err := gorm.G[Todo](h.db).Find(r.Context())
+	if err != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	writeJson(w, http.StatusOK, todos)
 }
 
-func getTodoHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	for _, t := range todos {
-		if strconv.Itoa(t.ID) == id {
-
-			writeJson(w, http.StatusOK, t)
-			return
-		}
+func (h *Handler) getTodo(w http.ResponseWriter, r *http.Request) {
+	// stringで受け取ったidをuintにキャスト
+	idStr := r.PathValue("id")
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
 	}
-	writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	id := uint(id64)
+
+	// todoを取り出す
+	todo, err := gorm.G[Todo](h.db).Where("id = ?", id).First(r.Context())
+	if err != nil {
+		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	writeJson(w, http.StatusOK, todo)
 }
 
-func updateTodoHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 	// titleとdoneの片方だけが来た場合でも機能させたい。
 	// ポインタを設定することで、ポインタがnilかどうかで変数の存在確認を行うことができる
 	var body struct {
@@ -80,31 +99,56 @@ func updateTodoHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := r.PathValue("id")
-	for i, t := range todos { // デフォでpythonのenumerateのように動作
-		if strconv.Itoa(t.ID) == id { // t.IDを型変換
-			if body.Title != nil {
-				todos[i].Title = *body.Title
-			}
-			if body.Done != nil {
-				todos[i].Done = *body.Done
-			}
-			writeJson(w, http.StatusOK, t)
+	idStr := r.PathValue("id")
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	id := uint(id64)
+
+	if body.Title != nil {
+		_, err = gorm.G[Todo](h.db).Where("id = ?", id).Update(r.Context(), "Title", *body.Title)
+		if err != nil {
+			writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 	}
-	writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	if body.Done != nil {
+		_, err = gorm.G[Todo](h.db).Where("id = ?", id).Update(r.Context(), "Done", *body.Done)
+		if err != nil {
+			writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
+	todo, err := gorm.G[Todo](h.db).Where("id = ?", id).First(r.Context())
+	if err != nil {
+		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	writeJson(w, http.StatusOK, todo)
 }
 
-func deleteTodoHandler(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	for i, t := range todos {
-		if strconv.Itoa(t.ID) == id {
-			todos = todos[:i+copy(todos[i:], todos[i+1:])]
-			writeJson(w, http.StatusOK, t)
-			return
-		}
+func (h *Handler) deleteTodo(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
 	}
+	id := uint(id64)
+
+	rowsAffected, err := gorm.G[Todo](h.db).Where("id = ?", id).Delete(r.Context())
+	if err != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if rowsAffected == 0 {
+		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Json形式でレスポンスを定義する
@@ -114,16 +158,50 @@ func writeJson(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// フロントとの接続用
+func corsMiddleware(origin string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	log.Println("Hello Logging!")
 
+	godotenv.Load()
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// DBマイグレーション
+	// dsn := "host=todo-db user=todo_user password=postgres dbname=todo port=5432 sslmode=disable TimeZone=Asia/Tokyo"
+	dsn := os.Getenv("DATABASE_URL")
+	log.Println(dsn)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatal("failed to connect database: ", err)
+	}
+	h := &Handler{db: db}
+	h.db.AutoMigrate(&Todo{})
+
+	corsOrigin := os.Getenv("CORS_ORIGIN")
+
 	// サーバー起動
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", getTopHandler)
-	mux.HandleFunc("GET /todos", getTodosHandler)
-	mux.HandleFunc("GET /todo/{id}", getTodoHandler)
-	mux.HandleFunc("POST /todos", createTodoHandler)
-	mux.HandleFunc("PATCH /todo/{id}", updateTodoHandler)
-	mux.HandleFunc("DELETE /todo/{id}", deleteTodoHandler)
-	http.ListenAndServe(":8080", mux)
+	mux.HandleFunc("GET /", h.getTop)
+	mux.HandleFunc("GET /todos", h.getTodos)
+	mux.HandleFunc("GET /todos/{id}", h.getTodo)
+	mux.HandleFunc("POST /todos", h.createTodo)
+	mux.HandleFunc("PATCH /todos/{id}", h.updateTodo)
+	mux.HandleFunc("DELETE /todos/{id}", h.deleteTodo)
+	http.ListenAndServe(":"+port, corsMiddleware(corsOrigin, mux))
 }
