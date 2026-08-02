@@ -54,3 +54,4 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SA_KEY }}
           projectId: ${{ secrets.GCP_PROJECT_ID }}
           channelId: live
+          entryPoint: ./frontend
