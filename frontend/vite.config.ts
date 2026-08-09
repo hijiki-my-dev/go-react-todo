@@ -9,8 +9,9 @@ export default defineConfig({
     babel({ presets: [reactCompilerPreset()] })
   ],
   server: {
+    host: '0.0.0.0',
     proxy: {
-        '/todos': 'http://localhost:8080'
+        '/todos': 'http://backend:8080'
     },
   }
 })
