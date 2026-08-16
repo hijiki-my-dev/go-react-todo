@@ -27,6 +27,7 @@ backend/*.test
 # Secrets
 github-actions-key.json
 firebase-sa-key.json
+firebase-auth-sa-key.json
 
 # IDE/editor
 .vscode/
