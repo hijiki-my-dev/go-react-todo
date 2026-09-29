@@ -25,7 +25,7 @@ jobs:
           flags: >
             --allow-unauthenticated
             --set-secrets=DATABASE_URL=DATABASE_URL:latest
-            --set-env-vars=CORS_ORIGIN=${{ secrets.FIREBASE_HOSTING_URL }}
+            --set-env-vars=CORS_ORIGIN=${{ secrets.FIREBASE_HOSTING_URL }},GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}
 
   deploy-frontend:
     runs-on: ubuntu-latest

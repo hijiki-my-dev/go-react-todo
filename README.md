@@ -1,5 +1,7 @@
 # Go, ReactによるTodoアプリ作成
 
+[サイトリンク](https://react-go-todo-app-504009.web.app/)
+
 Go言語とTypeScript、Reactの練習としてTodoアプリを作成しています。
 
 ## ブランチ
@@ -14,6 +16,7 @@ Go言語とTypeScript、Reactの練習としてTodoアプリを作成してい�
 - フロント: Firebase Hosting
 - バック: Cloud Run
 - DB: Neon(Postgres)
+    - ローカル環境ではDocker Composeを用いてpostgresのDBを立てる
 - CI/CD: GitHub Actions
 
 バックエンド：Dockerfileの分割
@@ -24,3 +27,7 @@ Go言語とTypeScript、Reactの練習としてTodoアプリを作成してい�
 バックエンド：シークレットやローカルと異なる変数の管理
 - ローカルでは`.env`を使用
 - デプロイ時にはGoogle CloudやGitHubに対して変数を追加する
+
+
+## ユーザー認証
+- Firebase のAuthentication機能を使ってGoogleアカウントでのログインを有効化
