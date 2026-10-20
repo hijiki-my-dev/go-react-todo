@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { api } from '../api'
 import '../App.css'
 
 type Todo = {
@@ -20,7 +20,7 @@ function Home() {
     console.log(`送信するデータ: ${title}`)
     const post = {title}
 
-    axios.post('/todos', post)
+    api.post('/todos', post)
         .then(response => {
             console.log(`Todo作成: ${response.data}`)
             setTodos(prev => [...prev, response.data])
@@ -40,7 +40,7 @@ function Home() {
   // 編集を確定してAPIに送信する
   function commitEdit(id: number) {
     if (editingTitle.trim() === '') return
-    axios.patch(`/todos/${id}`, { title: editingTitle })
+    api.patch(`/todos/${id}`, { title: editingTitle })
       .then(response => {
         setTodos(prev => prev.map(t => t.id === id ? response.data : t))
         setEditingId(null)
@@ -57,7 +57,7 @@ function Home() {
   }
 
   function deleteTodo(todoId: number) {
-    axios.delete(`/todos/${todoId}`)
+    api.delete(`/todos/${todoId}`)
       .then(response => {
         console.log(`削除: ${response.data}`)
         setTodos(todos.filter(todo => todo.id !== todoId))
@@ -65,7 +65,7 @@ function Home() {
   }
 
   useEffect(() => {
-    axios.get('/todos')
+    api.get('/todos')
       .then(response => {
         setTodos(response.data);
       })

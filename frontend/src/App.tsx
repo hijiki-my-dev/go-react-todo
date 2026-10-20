@@ -1,13 +1,9 @@
-import axios from 'axios'
 import './App.css'
 
 import Home from './pages/home.tsx'
 import Login from './pages/login.tsx'
 import ProtectedRoute from './auth/ProtectedRoute.tsx'
 import { Routes, Route, Navigate } from 'react-router'
-
-// GitHub Actionsのシークレットに、バックエンドのURLを設定することで注入
-axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 function App() {
   return(
