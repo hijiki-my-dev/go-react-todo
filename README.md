@@ -10,6 +10,11 @@ Go言語とTypeScript、Reactの練習としてTodoアプリを作成してい�
 - develop：開発用
 - in-memory-slice：DBの代わりにスライスを使った時の内容。保存用
 
+## ローカル環境
+
+- `docker compose up` でフロントエンド、バックエンド、DBを起動可能
+- ローカル開発URL: [http://localhost:5173/](http://localhost:5173/)
+
 ## デプロイ
 
 概要
