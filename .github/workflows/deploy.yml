@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# GITHUB_TOKENの権限を最小限にする（リポジトリの読み取りのみ）
+permissions:
+  contents: read
+
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
