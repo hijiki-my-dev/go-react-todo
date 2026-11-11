@@ -3,6 +3,6 @@
 .env.*
 *-sa-key.json
 *-key.json
-server
+/server
 tmp/
 .DS_Store
