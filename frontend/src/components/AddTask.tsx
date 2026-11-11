@@ -71,8 +71,7 @@ function AddTask({ onAdd, placeholder = '新しいタスクを追加…' }: AddT
         onSubmit={handleSubmit}
         className="hidden flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white pr-2 md:flex"
       >
-        <label className="flex min-w-[240px] flex-1 items-center gap-2.5 pl-3.5">
-          <PlusIcon className="text-slate-500" />
+        <label className="flex min-w-[240px] flex-1 items-center pl-4">
           <span className="sr-only">新しいタスク</span>
           <input
             value={title}
