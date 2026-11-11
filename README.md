@@ -1,8 +1,10 @@
 # Go, ReactによるTodoアプリ作成
 
+最低限の機能を持たせたTodoアプリ
+
 [サイトリンク](https://react-go-todo-app-504009.web.app/)
 
-Go言語とTypeScript、Reactの練習としてTodoアプリを作成しています。
+![Todoアプリのメイン画面](docs/images/sample.png)
 
 ## ブランチ
 
