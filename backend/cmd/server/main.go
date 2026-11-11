@@ -169,7 +169,7 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, r, err)
 		return
 	}
 	writeJson(w, http.StatusCreated, todo)
@@ -180,7 +180,7 @@ func (h *Handler) getTodos(w http.ResponseWriter, r *http.Request) {
 
 	todos, err := gorm.G[Todo](h.db).Where("user_id = ?", uid).Order("position, id").Find(r.Context())
 	if err != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, r, err)
 		return
 	}
 	writeJson(w, http.StatusOK, todos)
@@ -239,7 +239,7 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 	if body.Title != nil {
 		_, err = gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).Update(r.Context(), "Title", *body.Title)
 		if err != nil {
-			writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, r, err)
 			return
 		}
 	}
@@ -254,7 +254,7 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 			Where("id = ? AND user_id = ?", id, uid).
 			Updates(map[string]any{"done": *body.Done, "done_at": doneAt}).Error
 		if err != nil {
-			writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, r, err)
 			return
 		}
 	}
@@ -287,7 +287,7 @@ func (h *Handler) deleteTodo(w http.ResponseWriter, r *http.Request) {
 
 	result := h.db.WithContext(r.Context()).Where("id = ? AND user_id = ?", id, uid).Delete(&Todo{})
 	if result.Error != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": result.Error.Error()})
+		writeInternalError(w, r, result.Error)
 		return
 	}
 	if result.RowsAffected == 0 {
@@ -304,7 +304,7 @@ func (h *Handler) deleteCompleted(w http.ResponseWriter, r *http.Request) {
 	err := h.db.WithContext(r.Context()).
 		Where("user_id = ? AND kind = ? AND done = ?", uid, KindSingle, true).Delete(&Todo{}).Error
 	if err != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -332,7 +332,7 @@ func (h *Handler) reorderTodos(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -343,6 +343,12 @@ func writeJson(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// 内部エラーの詳細はサーバーログにだけ出し、クライアントには汎用メッセージを返す
+func writeInternalError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Printf("internal error: %s %s: %v", r.Method, r.URL.Path, err)
+	writeJson(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 }
 
 // フロントとの接続用
