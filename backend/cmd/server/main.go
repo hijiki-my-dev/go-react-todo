@@ -253,7 +253,10 @@ func main() {
 	}
 
 	h := &Handler{db: db, authClient: authClient}
-	h.db.AutoMigrate(&Todo{})
+	// マイグレーションに失敗したまま起動すると全APIが500になるため、ここで止める
+	if err := h.db.AutoMigrate(&Todo{}); err != nil {
+		log.Fatal("failed to migrate database: ", err)
+	}
 
 	corsOrigin := os.Getenv("CORS_ORIGIN")
 

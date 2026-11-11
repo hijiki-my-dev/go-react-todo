@@ -46,6 +46,11 @@ jobs:
         working-directory: ./frontend
         env:
           VITE_API_BASE_URL: ${{ secrets.CLOUD_RUN_URL }}
+          # Firebase Authentication の設定（ローカルでは frontend/.env.local に記載）
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
