@@ -68,8 +68,9 @@ type Todo struct {
 }
 
 type Handler struct {
-	db         *gorm.DB
-	authClient *auth.Client
+	db          *gorm.DB
+	authClient  *auth.Client
+	rateLimiter *userRateLimiter
 }
 
 type contextKey string
@@ -391,7 +392,7 @@ func main() {
 		log.Fatal("failed to initialize firebase auth client: ", err)
 	}
 
-	h := &Handler{db: db, authClient: authClient}
+	h := &Handler{db: db, authClient: authClient, rateLimiter: newUserRateLimiter()}
 	// マイグレーションに失敗したまま起動すると全APIが500になるため、ここで止める
 	if err := h.db.AutoMigrate(&Todo{}); err != nil {
 		log.Fatal("failed to migrate database: ", err)
@@ -415,13 +416,17 @@ func main() {
 	// サーバー起動
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", h.getTop)
-	mux.Handle("GET /todos", h.authMiddleware(http.HandlerFunc(h.getTodos)))
-	mux.Handle("GET /todos/{id}", h.authMiddleware(http.HandlerFunc(h.getTodo)))
-	mux.Handle("POST /todos", h.authMiddleware(http.HandlerFunc(h.createTodo)))
-	mux.Handle("PATCH /todos/{id}", h.authMiddleware(http.HandlerFunc(h.updateTodo)))
-	mux.Handle("PUT /todos/order", h.authMiddleware(http.HandlerFunc(h.reorderTodos)))
-	mux.Handle("DELETE /todos/{id}", h.authMiddleware(http.HandlerFunc(h.deleteTodo)))
-	mux.Handle("DELETE /todos/completed", h.authMiddleware(http.HandlerFunc(h.deleteCompleted)))
+	// 認証とユーザーごとのレート制限をかけたハンドラーにする
+	protected := func(f http.HandlerFunc) http.Handler {
+		return h.authMiddleware(h.rateLimitMiddleware(f))
+	}
+	mux.Handle("GET /todos", protected(h.getTodos))
+	mux.Handle("GET /todos/{id}", protected(h.getTodo))
+	mux.Handle("POST /todos", protected(h.createTodo))
+	mux.Handle("PATCH /todos/{id}", protected(h.updateTodo))
+	mux.Handle("PUT /todos/order", protected(h.reorderTodos))
+	mux.Handle("DELETE /todos/{id}", protected(h.deleteTodo))
+	mux.Handle("DELETE /todos/completed", protected(h.deleteCompleted))
 	// 遅いクライアントに接続を占有され続けないよう、各種タイムアウトを設定する
 	server := &http.Server{
 		Addr:              ":" + port,
