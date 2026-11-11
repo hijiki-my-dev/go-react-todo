@@ -8,7 +8,6 @@ export type Todo = {
   kind: TodoKind
   position: number
   doneAt: string | null
-  deletedAt: string | null
 }
 
 export const kindLabels: Record<TodoKind, string> = {

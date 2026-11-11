@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { isDoneNow, periodStart, type Todo, type TodoBoardModel } from '../types/todo'
 import AddTask from './AddTask'
+import ConfirmDialog from './ConfirmDialog'
 import TaskList from './TaskList'
 import { RepeatIcon } from './icons'
 
@@ -22,6 +23,7 @@ type TaskBoardProps = {
 // メイン画面の本体。PC: 左に個別タスク・右に定期タスク / スマホ: 定期タスク → 個別タスク
 function TaskBoard({ model, addPlaceholder }: TaskBoardProps) {
   const [period, setPeriod] = useState<RecurringKind>('weekly')
+  const [deleting, setDeleting] = useState<Todo | null>(null)
   const { todos, loading, error } = model
 
   // 完了した個別タスクは「完了タスク」ページへ移るのでここには出さない
@@ -38,7 +40,7 @@ function TaskBoard({ model, addPlaceholder }: TaskBoardProps) {
     isDone: isDoneNow,
     onToggle: toggle,
     onRename: model.rename,
-    onDelete: model.remove,
+    onDelete: setDeleting,
     onReorder: model.reorder,
   }
 
@@ -116,6 +118,18 @@ function TaskBoard({ model, addPlaceholder }: TaskBoardProps) {
             />
           </div>
         </div>
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`「${deleting.title}」を削除しますか？`}
+          confirmLabel="削除する"
+          onConfirm={() => {
+            model.remove(deleting.id)
+            setDeleting(null)
+          }}
+          onCancel={() => setDeleting(null)}
+        />
       )}
     </div>
   )

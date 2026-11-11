@@ -57,7 +57,7 @@ export function useApiTodos(): TodoBoardModel {
     }
   }
 
-  // ゴミ箱へ移動する
+  // 完全に削除する（確認はTaskBoard側で行う）
   async function remove(id: number) {
     setError('')
     try {

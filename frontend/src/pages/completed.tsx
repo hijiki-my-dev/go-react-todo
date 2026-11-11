@@ -51,7 +51,7 @@ function Completed() {
     setError('')
     try {
       if (target.kind === 'one') {
-        await api.delete(`/todos/${target.todo.id}`, { params: { permanent: true } })
+        await api.delete(`/todos/${target.todo.id}`)
         setTodos((prev) => prev.filter((t) => t.id !== target.todo.id))
       } else {
         await api.delete('/todos/completed')

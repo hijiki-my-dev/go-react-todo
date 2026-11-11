@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuth } from '../auth/AuthContext'
-import { CheckCircleIcon, FlaskIcon, ListIcon, LogoMark, LogoutIcon, TrashIcon } from '../components/icons'
+import { CheckCircleIcon, FlaskIcon, ListIcon, LogoMark, LogoutIcon } from '../components/icons'
 import { APP_TITLE } from '../constants'
 
 type NavItem = { to: string; label: string; shortLabel: string; icon: ReactNode }
@@ -11,7 +11,6 @@ type NavItem = { to: string; label: string; shortLabel: string; icon: ReactNode 
 const navItems: NavItem[] = [
   { to: '/', label: 'メイン', shortLabel: 'メイン', icon: <ListIcon /> },
   { to: '/completed', label: '完了タスク', shortLabel: '完了', icon: <CheckCircleIcon /> },
-  { to: '/trash', label: 'ゴミ箱', shortLabel: 'ゴミ箱', icon: <TrashIcon /> },
 ]
 
 // ログイン後の画面で共通のレイアウト（PC: 左サイドバー / スマホ: 下部タブ）

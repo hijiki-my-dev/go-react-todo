@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { sortTodos, type Todo, type TodoBoardModel, type TodoKind } from '../types/todo'
 
 function sampleTodo(id: number, title: string, kind: TodoKind): Todo {
-  return { id, title, kind, position: id, done: false, doneAt: null, deletedAt: null }
+  return { id, title, kind, position: id, done: false, doneAt: null }
 }
 
 const initialTodos: Todo[] = [

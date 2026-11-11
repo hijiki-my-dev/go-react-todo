@@ -17,11 +17,6 @@ export function timeLabel(iso: string): string {
   return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-export function shortDateLabel(iso: string): string {
-  const date = new Date(iso)
-  return `${date.getMonth() + 1}/${date.getDate()}`
-}
-
 // 日付ごとにまとめる（並び順はそのまま）
 export function groupByDay<T>(items: T[], getDate: (item: T) => string): { label: string; items: T[] }[] {
   const groups: { label: string; items: T[] }[] = []

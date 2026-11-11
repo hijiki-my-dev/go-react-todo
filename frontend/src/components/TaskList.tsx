@@ -53,7 +53,7 @@ type TaskListProps = {
   emptyText: string
   onToggle: (todo: Todo) => void
   onRename: (id: number, title: string) => void
-  onDelete: (id: number) => void
+  onDelete: (todo: Todo) => void
   onReorder: (ids: number[]) => void
 }
 
@@ -267,9 +267,9 @@ function SortableRow({ todo, isDone, badge, onToggle, onRename, onDelete }: RowP
       {badge?.(todo)}
       <button
         type="button"
-        onClick={() => onDelete(todo.id)}
+        onClick={() => onDelete(todo)}
         aria-label={`「${todo.title}」を削除`}
-        title="ゴミ箱へ移動"
+        title="削除"
         className="flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-900 focus-visible:opacity-100 md:size-8 md:opacity-0 md:group-hover:opacity-100"
       >
         <TrashIcon />
