@@ -15,14 +15,31 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 )
 
+// Todoの種類。single: 個別タスク、weekly/monthly: 定期タスク
+const (
+	KindSingle  = "single"
+	KindWeekly  = "weekly"
+	KindMonthly = "monthly"
+)
+
+func isValidKind(kind string) bool {
+	return kind == KindSingle || kind == KindWeekly || kind == KindMonthly
+}
+
 // Todoの形式を定義
+// DeletedAtを持たせるとGORMの論理削除になり、通常の検索から除外される（=ゴミ箱）
 type Todo struct {
-	ID     uint   `json:"id"    gorm:"primaryKey"`
-	UserID string `json:"-" gorm:"index;not null"`
-	Title  string `json:"title"`
-	Done   bool   `json:"done"`
+	ID        uint           `json:"id"    gorm:"primaryKey"`
+	UserID    string         `json:"-" gorm:"index;not null"`
+	Title     string         `json:"title"`
+	Done      bool           `json:"done"`
+	Kind      string         `json:"kind" gorm:"not null;default:single"`
+	Position  int            `json:"position" gorm:"not null;default:0"`
+	DoneAt    *time.Time     `json:"doneAt"`
+	DeletedAt gorm.DeletedAt `json:"deletedAt" gorm:"index"`
 }
 
 type Handler struct {
@@ -78,6 +95,7 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Title string `json:"title"`
+		Kind  string `json:"kind"`
 	}
 
 	// データ受信・例外処理
@@ -85,9 +103,24 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	if body.Kind == "" {
+		body.Kind = KindSingle
+	}
+	if !isValidKind(body.Kind) {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid kind"})
+		return
+	}
+
+	// 新しいTodoは一覧の末尾に追加する
+	position := 0
+	for _, t := range todos {
+		if t.Position >= position {
+			position = t.Position + 1
+		}
+	}
 
 	// todoを追加
-	todo := Todo{UserID: uid, Title: body.Title, Done: false}
+	todo := Todo{UserID: uid, Title: body.Title, Done: false, Kind: body.Kind, Position: position}
 	err = gorm.G[Todo](h.db).Create(r.Context(), &todo)
 	if err != nil {
 		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -99,7 +132,22 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getTodos(w http.ResponseWriter, r *http.Request) {
 	uid, _ := userIDFromContext(r.Context())
 
-	todos, err := gorm.G[Todo](h.db).Where("user_id = ?", uid).Find(r.Context())
+	todos, err := gorm.G[Todo](h.db).Where("user_id = ?", uid).Order("position, id").Find(r.Context())
+	if err != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJson(w, http.StatusOK, todos)
+}
+
+// ゴミ箱（論理削除済み）のTodo一覧
+func (h *Handler) getTrash(w http.ResponseWriter, r *http.Request) {
+	uid, _ := userIDFromContext(r.Context())
+
+	var todos []Todo
+	err := h.db.WithContext(r.Context()).Unscoped().
+		Where("user_id = ? AND deleted_at IS NOT NULL", uid).
+		Order("deleted_at DESC").Find(&todos).Error
 	if err != nil {
 		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -161,7 +209,15 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if body.Done != nil {
-		_, err = gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).Update(r.Context(), "Done", *body.Done)
+		// 完了にした日時を記録する。定期タスクは「今週/今月に完了したか」の判定に使う
+		var doneAt *time.Time
+		if *body.Done {
+			now := time.Now()
+			doneAt = &now
+		}
+		err = h.db.WithContext(r.Context()).Model(&Todo{}).
+			Where("id = ? AND user_id = ?", id, uid).
+			Updates(map[string]any{"done": *body.Done, "done_at": doneAt}).Error
 		if err != nil {
 			writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
@@ -176,24 +232,120 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 	writeJson(w, http.StatusOK, todo)
 }
 
+// パスの{id}をuintに変換する
+func parseID(r *http.Request) (uint, bool) {
+	id64, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return uint(id64), true
+}
+
+// 通常はゴミ箱へ移動（論理削除）。?permanent=true なら完全に削除する
 func (h *Handler) deleteTodo(w http.ResponseWriter, r *http.Request) {
 	uid, _ := userIDFromContext(r.Context())
 
-	idStr := r.PathValue("id")
-	id64, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
+	id, ok := parseID(r)
+	if !ok {
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
-	id := uint(id64)
 
-	rowsAffected, err := gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).Delete(r.Context())
+	db := h.db.WithContext(r.Context())
+	if r.URL.Query().Get("permanent") == "true" {
+		db = db.Unscoped()
+	}
+	result := db.Where("id = ? AND user_id = ?", id, uid).Delete(&Todo{})
+	if result.Error != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ゴミ箱から元に戻す
+func (h *Handler) restoreTodo(w http.ResponseWriter, r *http.Request) {
+	uid, _ := userIDFromContext(r.Context())
+
+	id, ok := parseID(r)
+	if !ok {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+
+	result := h.db.WithContext(r.Context()).Unscoped().Model(&Todo{}).
+		Where("id = ? AND user_id = ? AND deleted_at IS NOT NULL", id, uid).
+		Update("deleted_at", nil)
+	if result.Error != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+
+	todo, err := gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).First(r.Context())
+	if err != nil {
+		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	writeJson(w, http.StatusOK, todo)
+}
+
+// ゴミ箱を空にする
+func (h *Handler) emptyTrash(w http.ResponseWriter, r *http.Request) {
+	uid, _ := userIDFromContext(r.Context())
+
+	err := h.db.WithContext(r.Context()).Unscoped().
+		Where("user_id = ? AND deleted_at IS NOT NULL", uid).Delete(&Todo{}).Error
 	if err != nil {
 		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if rowsAffected == 0 {
-		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// 完了済みの個別タスクをすべて完全に削除する
+func (h *Handler) deleteCompleted(w http.ResponseWriter, r *http.Request) {
+	uid, _ := userIDFromContext(r.Context())
+
+	err := h.db.WithContext(r.Context()).Unscoped().
+		Where("user_id = ? AND kind = ? AND done = ?", uid, KindSingle, true).Delete(&Todo{}).Error
+	if err != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// 並び順を保存する。受け取ったIDの順番でpositionを振り直す
+func (h *Handler) reorderTodos(w http.ResponseWriter, r *http.Request) {
+	uid, _ := userIDFromContext(r.Context())
+
+	var body struct {
+		IDs []uint `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) > 500 {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+
+	err := h.db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		for i, id := range body.IDs {
+			err := tx.Model(&Todo{}).Where("id = ? AND user_id = ?", id, uid).Update("position", i).Error
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -210,7 +362,7 @@ func writeJson(w http.ResponseWriter, status int, v any) {
 func corsMiddleware(origin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -264,9 +416,14 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", h.getTop)
 	mux.Handle("GET /todos", h.authMiddleware(http.HandlerFunc(h.getTodos)))
+	mux.Handle("GET /todos/trash", h.authMiddleware(http.HandlerFunc(h.getTrash)))
 	mux.Handle("GET /todos/{id}", h.authMiddleware(http.HandlerFunc(h.getTodo)))
 	mux.Handle("POST /todos", h.authMiddleware(http.HandlerFunc(h.createTodo)))
 	mux.Handle("PATCH /todos/{id}", h.authMiddleware(http.HandlerFunc(h.updateTodo)))
+	mux.Handle("PUT /todos/order", h.authMiddleware(http.HandlerFunc(h.reorderTodos)))
 	mux.Handle("DELETE /todos/{id}", h.authMiddleware(http.HandlerFunc(h.deleteTodo)))
+	mux.Handle("POST /todos/{id}/restore", h.authMiddleware(http.HandlerFunc(h.restoreTodo)))
+	mux.Handle("DELETE /todos/trash", h.authMiddleware(http.HandlerFunc(h.emptyTrash)))
+	mux.Handle("DELETE /todos/completed", h.authMiddleware(http.HandlerFunc(h.deleteCompleted)))
 	http.ListenAndServe(":"+port, corsMiddleware(corsOrigin, mux))
 }
