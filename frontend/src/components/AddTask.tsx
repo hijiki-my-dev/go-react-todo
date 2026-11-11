@@ -38,26 +38,25 @@ function KindPicker({ kind, onChange, name }: { kind: TodoKind; onChange: (k: To
 function AddTask({ onAdd, placeholder = '新しいタスクを追加…' }: AddTaskProps) {
   const [title, setTitle] = useState('')
   const [kind, setKind] = useState<TodoKind>('single')
-  const [submitting, setSubmitting] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  // 保存の完了を待たずに入力欄を空にし、続けて入力できるようにする
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const trimmed = title.trim()
-    if (trimmed === '' || submitting) return
-    setSubmitting(true)
-    const ok = await onAdd(trimmed, kind)
-    setSubmitting(false)
-    if (ok) {
-      setTitle('')
-      setSheetOpen(false)
-    }
+    if (trimmed === '') return
+    setTitle('')
+    setSheetOpen(false)
+    onAdd(trimmed, kind).then((ok) => {
+      // 失敗したら、まだ次の入力を始めていなければタイトルを戻して再送しやすくする
+      if (!ok) setTitle((current) => (current === '' ? trimmed : current))
+    })
   }
 
   const submitButton = (
     <button
       type="submit"
-      disabled={submitting || title.trim() === ''}
+      disabled={title.trim() === ''}
       className="h-11 shrink-0 rounded-lg bg-indigo-600 px-5 text-[15px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 md:h-9 md:px-4 md:text-sm"
     >
       追加

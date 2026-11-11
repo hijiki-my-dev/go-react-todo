@@ -45,6 +45,11 @@ export function isDoneNow(todo: Todo, now = new Date()): boolean {
   return new Date(todo.doneAt) >= periodStart(todo.kind, now)
 }
 
+// 保存が完了していない（仮のIDを持つ）Todoかどうか。仮のIDには負の数を使う
+export function isPendingTodo(todo: Todo): boolean {
+  return todo.id < 0
+}
+
 // 並び順（position → id）で並べる
 export function sortTodos(todos: Todo[]): Todo[] {
   return [...todos].sort((a, b) => a.position - b.position || a.id - b.id)
