@@ -68,9 +68,10 @@ type Todo struct {
 }
 
 type Handler struct {
-	db          *gorm.DB
-	authClient  *auth.Client
-	rateLimiter *userRateLimiter
+	db              *gorm.DB
+	authClient      *auth.Client
+	userLimiter     *keyedLimiter // 認証済みユーザーごとのリクエスト数の制限
+	authFailLimiter *keyedLimiter // IPごとの認証失敗回数の制限
 }
 
 type contextKey string
@@ -86,15 +87,25 @@ func userIDFromContext(ctx context.Context) (string, bool) {
 // Authorizationヘッダーのトークンを検証し、UIDをコンテキストに詰める
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 認証に失敗し続けているIPは、トークンを検証する前に断る（検証のCPUを使わせない）
+		ip := clientIP(r)
+		if h.authFailLimiter.blocked(ip) {
+			w.Header().Set("Retry-After", authFailRetrySec)
+			writeJson(w, http.StatusTooManyRequests, map[string]string{"error": "too many requests"})
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		token, found := strings.CutPrefix(authHeader, "Bearer ")
 		if !found || token == "" {
+			h.recordAuthFailure(r, ip, "missing token")
 			writeJson(w, http.StatusUnauthorized, map[string]string{"error": "missing bearer token"})
 			return
 		}
 
 		decoded, err := h.authClient.VerifyIDToken(r.Context(), token)
 		if err != nil {
+			h.recordAuthFailure(r, ip, "invalid token")
 			writeJson(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 			return
 		}
@@ -392,7 +403,12 @@ func main() {
 		log.Fatal("failed to initialize firebase auth client: ", err)
 	}
 
-	h := &Handler{db: db, authClient: authClient, rateLimiter: newUserRateLimiter()}
+	h := &Handler{
+		db:              db,
+		authClient:      authClient,
+		userLimiter:     newKeyedLimiter(userRateLimit, userRateBurst),
+		authFailLimiter: newKeyedLimiter(authFailRateLimit, authFailBurst),
+	}
 	// マイグレーションに失敗したまま起動すると全APIが500になるため、ここで止める
 	if err := h.db.AutoMigrate(&Todo{}); err != nil {
 		log.Fatal("failed to migrate database: ", err)
