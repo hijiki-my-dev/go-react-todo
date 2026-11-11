@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	firebase "firebase.google.com/go/v4"
@@ -29,6 +30,11 @@ const (
 func isValidKind(kind string) bool {
 	return kind == KindSingle || kind == KindWeekly || kind == KindMonthly
 }
+
+// 1ユーザーが持てるTodoの最大件数
+const maxTodosPerUser = 200
+
+var errTodoLimitReached = errors.New("todo limit reached")
 
 // タイトルの最大文字数（フロントのmaxLengthと揃える）
 const maxTitleLength = 200
@@ -109,11 +115,6 @@ func (h *Handler) getTop(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 	uid, _ := userIDFromContext(r.Context())
 
-	todos, err := gorm.G[Todo](h.db).Where("user_id = ?", uid).Find(r.Context())
-	if len(todos) > 200 {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": "Todo list is full."})
-		return
-	}
 	var body struct {
 		Title string `json:"title"`
 		Kind  string `json:"kind"`
@@ -136,17 +137,37 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 新しいTodoは一覧の末尾に追加する
-	position := 0
-	for _, t := range todos {
-		if t.Position >= position {
-			position = t.Position + 1
+	todo := Todo{UserID: uid, Title: body.Title, Done: false, Kind: body.Kind}
+	err := h.db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		// 同じユーザーの作成リクエストを1件ずつ処理し、同時リクエストで上限を超えないようにする
+		// （ロックはトランザクション終了時に自動で解放される）
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", uid).Error; err != nil {
+			return err
 		}
-	}
 
-	// todoを追加
-	todo := Todo{UserID: uid, Title: body.Title, Done: false, Kind: body.Kind, Position: position}
-	err = gorm.G[Todo](h.db).Create(r.Context(), &todo)
+		var stats struct {
+			Count  int64
+			MaxPos *int
+		}
+		err := tx.Model(&Todo{}).Select("COUNT(*) AS count, MAX(position) AS max_pos").
+			Where("user_id = ?", uid).Scan(&stats).Error
+		if err != nil {
+			return err
+		}
+		if stats.Count >= maxTodosPerUser {
+			return errTodoLimitReached
+		}
+
+		// 新しいTodoは一覧の末尾に追加する
+		if stats.MaxPos != nil {
+			todo.Position = *stats.MaxPos + 1
+		}
+		return tx.Create(&todo).Error
+	})
+	if errors.Is(err, errTodoLimitReached) {
+		writeJson(w, http.StatusConflict, map[string]string{"error": "Todo list is full."})
+		return
+	}
 	if err != nil {
 		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
