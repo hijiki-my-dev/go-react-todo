@@ -1,5 +1,7 @@
 import Home from './pages/home.tsx'
 import Login from './pages/login.tsx'
+import Completed from './pages/completed.tsx'
+import Trash from './pages/trash.tsx'
 import ProtectedRoute from './auth/ProtectedRoute.tsx'
 import AppLayout from './layouts/AppLayout.tsx'
 import { Routes, Route, Navigate } from 'react-router'
@@ -14,6 +16,8 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Home />} />
+          <Route path="/completed" element={<Completed />} />
+          <Route path="/trash" element={<Trash />} />
         </Route>
       </Route>
 
