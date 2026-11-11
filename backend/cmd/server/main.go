@@ -341,6 +341,7 @@ func (h *Handler) reorderTodos(w http.ResponseWriter, r *http.Request) {
 // Json形式でレスポンスを定義する
 func writeJson(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
