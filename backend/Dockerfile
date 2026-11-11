@@ -17,4 +17,8 @@ WORKDIR /app
 
 COPY --from=builder /app/main .
 
+# root権限で動かさないよう、専用の一般ユーザーで実行する
+RUN adduser -D -H -u 10001 appuser
+USER appuser
+
 CMD ["./main"]
