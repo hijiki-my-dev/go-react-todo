@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, apiErrorMessage } from '../api'
 import { sortTodos, type Todo, type TodoBoardModel, type TodoKind } from '../types/todo'
 
 // 保存中のTodoに振る仮のID。サーバーのIDと重ならないよう負の数を使う
@@ -17,7 +17,7 @@ export function useApiTodos(): TodoBoardModel {
       .then((response) => setTodos(sortTodos(response.data)))
       .catch((err) => {
         console.error('データ取得エラー:', err)
-        setError('タスクの取得に失敗しました。再読み込みしてください。')
+        setError(apiErrorMessage(err, 'タスクの取得に失敗しました。再読み込みしてください。'))
       })
       .finally(() => setLoading(false))
   }, [])
@@ -41,7 +41,7 @@ export function useApiTodos(): TodoBoardModel {
     } catch (err) {
       console.error('作成エラー:', err)
       setTodos((prev) => prev.filter((t) => t.id !== tempId))
-      setError('タスクの追加に失敗しました。')
+      setError(apiErrorMessage(err, 'タスクの追加に失敗しました。'))
       return false
     }
   }
@@ -53,7 +53,7 @@ export function useApiTodos(): TodoBoardModel {
       replace(response.data)
     } catch (err) {
       console.error('更新エラー:', err)
-      setError('タスクの更新に失敗しました。')
+      setError(apiErrorMessage(err, 'タスクの更新に失敗しました。'))
     }
   }
 
@@ -70,7 +70,7 @@ export function useApiTodos(): TodoBoardModel {
     } catch (err) {
       console.error('更新エラー:', err)
       setTodos((prev) => prev.map((t) => (t.id === id ? before : t)))
-      setError('タスクの更新に失敗しました。')
+      setError(apiErrorMessage(err, 'タスクの更新に失敗しました。'))
     }
   }
 
@@ -82,7 +82,7 @@ export function useApiTodos(): TodoBoardModel {
       setTodos((prev) => prev.filter((t) => t.id !== id))
     } catch (err) {
       console.error('削除エラー:', err)
-      setError('タスクの削除に失敗しました。')
+      setError(apiErrorMessage(err, 'タスクの削除に失敗しました。'))
     }
   }
 
@@ -98,7 +98,7 @@ export function useApiTodos(): TodoBoardModel {
     api.put('/todos/order', { ids: ids.filter((id) => id > 0) }).catch((err) => {
       console.error('並び替えエラー:', err)
       setTodos(before)
-      setError('並び順の保存に失敗しました。')
+      setError(apiErrorMessage(err, '並び順の保存に失敗しました。'))
     })
   }
 

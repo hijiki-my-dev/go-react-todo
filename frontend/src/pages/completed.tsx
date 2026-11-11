@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, apiErrorMessage } from '../api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { CheckedCircleIcon, TrashIcon, UndoIcon } from '../components/icons'
 import { groupByDay, timeLabel } from '../lib/date'
@@ -28,7 +28,7 @@ function Completed() {
       })
       .catch((err) => {
         console.error('データ取得エラー:', err)
-        setError('完了タスクの取得に失敗しました。再読み込みしてください。')
+        setError(apiErrorMessage(err, '完了タスクの取得に失敗しました。再読み込みしてください。'))
       })
       .finally(() => setLoading(false))
   }, [])
@@ -40,7 +40,7 @@ function Completed() {
       setTodos((prev) => prev.filter((t) => t.id !== id))
     } catch (err) {
       console.error('更新エラー:', err)
-      setError('タスクを戻せませんでした。')
+      setError(apiErrorMessage(err, 'タスクを戻せませんでした。'))
     }
   }
 
@@ -59,7 +59,7 @@ function Completed() {
       }
     } catch (err) {
       console.error('削除エラー:', err)
-      setError('削除に失敗しました。')
+      setError(apiErrorMessage(err, '削除に失敗しました。'))
     }
   }
 

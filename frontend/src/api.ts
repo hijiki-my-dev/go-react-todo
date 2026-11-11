@@ -49,3 +49,12 @@ api.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+// APIエラーを画面に出すメッセージに変換する。レート制限・件数上限は理由を伝え、それ以外は既定の文言を使う
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 429) return '操作が多すぎます。少し待ってからお試しください。'
+    if (error.response?.status === 409) return 'タスクは1人500件までです。不要なタスクを削除してから追加してください。'
+  }
+  return fallback
+}
