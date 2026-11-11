@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 
 	firebase "firebase.google.com/go/v4"
@@ -33,8 +32,6 @@ func isValidKind(kind string) bool {
 
 // 1ユーザーが持てるTodoの最大件数
 const maxTodosPerUser = 200
-
-var errTodoLimitReached = errors.New("todo limit reached")
 
 // タイトルの最大文字数（フロントのmaxLengthと揃える）
 const maxTitleLength = 200
@@ -137,39 +134,24 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	todo := Todo{UserID: uid, Title: body.Title, Done: false, Kind: body.Kind}
-	err := h.db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
-		// 同じユーザーの作成リクエストを1件ずつ処理し、同時リクエストで上限を超えないようにする
-		// （ロックはトランザクション終了時に自動で解放される）
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", uid).Error; err != nil {
-			return err
-		}
-
-		var stats struct {
-			Count  int64
-			MaxPos *int
-		}
-		err := tx.Model(&Todo{}).Select("COUNT(*) AS count, MAX(position) AS max_pos").
-			Where("user_id = ?", uid).Scan(&stats).Error
-		if err != nil {
-			return err
-		}
-		if stats.Count >= maxTodosPerUser {
-			return errTodoLimitReached
-		}
-
-		// 新しいTodoは一覧の末尾に追加する
-		if stats.MaxPos != nil {
-			todo.Position = *stats.MaxPos + 1
-		}
-		return tx.Create(&todo).Error
-	})
-	if errors.Is(err, errTodoLimitReached) {
-		writeJson(w, http.StatusConflict, map[string]string{"error": "Todo list is full."})
+	// 件数チェック・末尾の位置の計算・追加を1つのSQLで行い、DBとの往復を1回にする
+	// 件数が上限以上ならHAVINGで行が消え、何も追加されない
+	// （上限は悪用防止の目安なので、同時リクエストでわずかに超えることは許容する）
+	var todo Todo
+	result := h.db.WithContext(r.Context()).Raw(`
+		INSERT INTO todos (user_id, title, done, kind, position)
+		SELECT ?, ?, false, ?, COALESCE(MAX(position), -1) + 1
+		FROM todos WHERE user_id = ?
+		HAVING COUNT(*) < ?
+		RETURNING *`,
+		uid, body.Title, body.Kind, uid, maxTodosPerUser,
+	).Scan(&todo)
+	if result.Error != nil {
+		writeInternalError(w, r, result.Error)
 		return
 	}
-	if err != nil {
-		writeInternalError(w, r, err)
+	if result.RowsAffected == 0 {
+		writeJson(w, http.StatusConflict, map[string]string{"error": "Todo list is full."})
 		return
 	}
 	writeJson(w, http.StatusCreated, todo)
