@@ -31,8 +31,8 @@ func isValidKind(kind string) bool {
 	return kind == KindSingle || kind == KindWeekly || kind == KindMonthly
 }
 
-// 1ユーザーが持てるTodoの最大件数
-const maxTodosPerUser = 200
+// 1ユーザーが持てるTodoの最大件数（完了済み・未完了・定期タスクをすべて含む）
+const maxTodosPerUser = 500
 
 // タイトルの最大文字数（フロントのmaxLengthと揃える）
 const maxTitleLength = 200
