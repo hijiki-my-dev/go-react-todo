@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.local
     container_name: todo-frontend
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -18,7 +18,7 @@ services:
     container_name: todo-backend
     image: todo-backend
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./backend:/app
     depends_on:
@@ -28,7 +28,7 @@ services:
     image: postgres:18
     container_name: todo-db
     ports:
-      - 5432:5432
+      - "127.0.0.1:5432:5432"
     volumes:
       - db-store:/var/lib/postgresql
     environment:

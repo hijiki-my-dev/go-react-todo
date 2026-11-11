@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# GITHUB_TOKENの権限を最小限にする（リポジトリの読み取りのみ）
+permissions:
+  contents: read
+
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
@@ -24,6 +28,7 @@ jobs:
           source: ./backend
           flags: >
             --allow-unauthenticated
+            --max-instances=1
             --set-secrets=DATABASE_URL=DATABASE_URL:latest
             --set-env-vars=CORS_ORIGIN=${{ secrets.FIREBASE_HOSTING_URL }},GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}
 
