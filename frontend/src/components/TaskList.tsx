@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { Todo } from '../types/todo'
+import { isPendingTodo, type Todo } from '../types/todo'
 import { CheckIcon, CheckedCircleIcon, ChevronDownIcon, CircleIcon, GripIcon, TrashIcon } from './icons'
 
 const LIMIT_OPTIONS = [3, 5, 10, 0] as const // 0 = すべて
@@ -190,12 +190,15 @@ type RowProps = TaskListProps & { todo: Todo }
 
 function SortableRow({ todo, isDone, badge, onToggle, onRename, onDelete }: RowProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
-    useSortable({ id: todo.id })
+    useSortable({ id: todo.id, disabled: isPendingTodo(todo) })
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(todo.title)
   const done = isDone(todo)
+  // 保存中（仮のID）のタスクはサーバーにまだないので、保存が終わるまで操作できなくする
+  const pending = isPendingTodo(todo)
 
   function startEditing() {
+    if (pending) return
     setDraft(todo.title)
     setEditing(true)
   }
@@ -210,7 +213,8 @@ function SortableRow({ todo, isDone, badge, onToggle, onRename, onDelete }: RowP
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={`group relative flex min-h-[52px] items-center gap-0.5 rounded-xl px-1 md:min-h-0 md:gap-1 md:px-1.5 md:py-1 ${
+      aria-busy={pending}
+      className={`group relative flex min-h-[52px] items-center gap-0.5 rounded-xl px-1 md:min-h-0 md:gap-1 md:px-1.5 md:py-1 ${pending ? 'opacity-60' : ''} ${
         isDragging
           ? 'z-10 border border-indigo-300 bg-white shadow-lg shadow-indigo-600/15'
           : 'hover:bg-slate-50'
@@ -219,6 +223,7 @@ function SortableRow({ todo, isDone, badge, onToggle, onRename, onDelete }: RowP
       <button
         type="button"
         ref={setActivatorNodeRef}
+        disabled={pending}
         aria-label={`「${todo.title}」を並び替え`}
         className={`flex h-11 w-7 shrink-0 touch-none items-center justify-center rounded-md md:h-8 ${
           isDragging ? 'cursor-grabbing text-indigo-600' : 'cursor-grab text-slate-400 hover:text-slate-600'
@@ -231,6 +236,7 @@ function SortableRow({ todo, isDone, badge, onToggle, onRename, onDelete }: RowP
       <button
         type="button"
         onClick={() => onToggle(todo)}
+        disabled={pending}
         aria-label={done ? `「${todo.title}」を未完了に戻す` : `「${todo.title}」を完了にする`}
         aria-pressed={done}
         className="flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:text-indigo-600 md:size-8"
@@ -268,6 +274,7 @@ function SortableRow({ todo, isDone, badge, onToggle, onRename, onDelete }: RowP
       <button
         type="button"
         onClick={() => onDelete(todo)}
+        disabled={pending}
         aria-label={`「${todo.title}」を削除`}
         title="削除"
         className="flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-900 focus-visible:opacity-100 md:size-8 md:opacity-0 md:group-hover:opacity-100"

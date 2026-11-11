@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 
 	firebase "firebase.google.com/go/v4"
@@ -11,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"io"
 	"log"
 	"net/http"
@@ -31,10 +31,8 @@ func isValidKind(kind string) bool {
 	return kind == KindSingle || kind == KindWeekly || kind == KindMonthly
 }
 
-// 1ユーザーが持てるTodoの最大件数
-const maxTodosPerUser = 200
-
-var errTodoLimitReached = errors.New("todo limit reached")
+// 1ユーザーが持てるTodoの最大件数（完了済み・未完了・定期タスクをすべて含む）
+const maxTodosPerUser = 500
 
 // タイトルの最大文字数（フロントのmaxLengthと揃える）
 const maxTitleLength = 200
@@ -70,8 +68,10 @@ type Todo struct {
 }
 
 type Handler struct {
-	db         *gorm.DB
-	authClient *auth.Client
+	db              *gorm.DB
+	authClient      *auth.Client
+	userLimiter     *keyedLimiter // 認証済みユーザーごとのリクエスト数の制限
+	authFailLimiter *keyedLimiter // IPごとの認証失敗回数の制限
 }
 
 type contextKey string
@@ -87,15 +87,25 @@ func userIDFromContext(ctx context.Context) (string, bool) {
 // Authorizationヘッダーのトークンを検証し、UIDをコンテキストに詰める
 func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 認証に失敗し続けているIPは、トークンを検証する前に断る（検証のCPUを使わせない）
+		ip := clientIP(r)
+		if h.authFailLimiter.blocked(ip) {
+			w.Header().Set("Retry-After", authFailRetrySec)
+			writeJson(w, http.StatusTooManyRequests, map[string]string{"error": "too many requests"})
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		token, found := strings.CutPrefix(authHeader, "Bearer ")
 		if !found || token == "" {
+			h.recordAuthFailure(r, ip, "missing token")
 			writeJson(w, http.StatusUnauthorized, map[string]string{"error": "missing bearer token"})
 			return
 		}
 
 		decoded, err := h.authClient.VerifyIDToken(r.Context(), token)
 		if err != nil {
+			h.recordAuthFailure(r, ip, "invalid token")
 			writeJson(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 			return
 		}
@@ -137,39 +147,24 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	todo := Todo{UserID: uid, Title: body.Title, Done: false, Kind: body.Kind}
-	err := h.db.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
-		// 同じユーザーの作成リクエストを1件ずつ処理し、同時リクエストで上限を超えないようにする
-		// （ロックはトランザクション終了時に自動で解放される）
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", uid).Error; err != nil {
-			return err
-		}
-
-		var stats struct {
-			Count  int64
-			MaxPos *int
-		}
-		err := tx.Model(&Todo{}).Select("COUNT(*) AS count, MAX(position) AS max_pos").
-			Where("user_id = ?", uid).Scan(&stats).Error
-		if err != nil {
-			return err
-		}
-		if stats.Count >= maxTodosPerUser {
-			return errTodoLimitReached
-		}
-
-		// 新しいTodoは一覧の末尾に追加する
-		if stats.MaxPos != nil {
-			todo.Position = *stats.MaxPos + 1
-		}
-		return tx.Create(&todo).Error
-	})
-	if errors.Is(err, errTodoLimitReached) {
-		writeJson(w, http.StatusConflict, map[string]string{"error": "Todo list is full."})
+	// 件数チェック・末尾の位置の計算・追加を1つのSQLで行い、DBとの往復を1回にする
+	// 件数が上限以上ならHAVINGで行が消え、何も追加されない
+	// （上限は悪用防止の目安なので、同時リクエストでわずかに超えることは許容する）
+	var todo Todo
+	result := h.db.WithContext(r.Context()).Raw(`
+		INSERT INTO todos (user_id, title, done, kind, position)
+		SELECT ?, ?, false, ?, COALESCE(MAX(position), -1) + 1
+		FROM todos WHERE user_id = ?
+		HAVING COUNT(*) < ?
+		RETURNING *`,
+		uid, body.Title, body.Kind, uid, maxTodosPerUser,
+	).Scan(&todo)
+	if result.Error != nil {
+		writeInternalError(w, r, result.Error)
 		return
 	}
-	if err != nil {
-		writeInternalError(w, r, err)
+	if result.RowsAffected == 0 {
+		writeJson(w, http.StatusConflict, map[string]string{"error": "Todo list is full."})
 		return
 	}
 	writeJson(w, http.StatusCreated, todo)
@@ -236,12 +231,10 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid title"})
 		return
 	}
+	// 変更する列をまとめ、1回のUPDATEで更新後の行も受け取る（DBとの往復を1回にする）
+	updates := map[string]any{}
 	if body.Title != nil {
-		_, err = gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).Update(r.Context(), "Title", *body.Title)
-		if err != nil {
-			writeInternalError(w, r, err)
-			return
-		}
+		updates["title"] = *body.Title
 	}
 	if body.Done != nil {
 		// 完了にした日時を記録する。定期タスクは「今週/今月に完了したか」の判定に使う
@@ -250,17 +243,29 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 			now := time.Now()
 			doneAt = &now
 		}
-		err = h.db.WithContext(r.Context()).Model(&Todo{}).
-			Where("id = ? AND user_id = ?", id, uid).
-			Updates(map[string]any{"done": *body.Done, "done_at": doneAt}).Error
-		if err != nil {
-			writeInternalError(w, r, err)
-			return
-		}
+		updates["done"] = *body.Done
+		updates["done_at"] = doneAt
 	}
 
-	todo, err := gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).First(r.Context())
-	if err != nil {
+	// 変更がなければ現在の値を返すだけ
+	if len(updates) == 0 {
+		todo, err := gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).First(r.Context())
+		if err != nil {
+			writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJson(w, http.StatusOK, todo)
+		return
+	}
+
+	var todo Todo
+	result := h.db.WithContext(r.Context()).Model(&todo).Clauses(clause.Returning{}).
+		Where("id = ? AND user_id = ?", id, uid).Updates(updates)
+	if result.Error != nil {
+		writeInternalError(w, r, result.Error)
+		return
+	}
+	if result.RowsAffected == 0 {
 		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
@@ -398,7 +403,12 @@ func main() {
 		log.Fatal("failed to initialize firebase auth client: ", err)
 	}
 
-	h := &Handler{db: db, authClient: authClient}
+	h := &Handler{
+		db:              db,
+		authClient:      authClient,
+		userLimiter:     newKeyedLimiter(userRateLimit, userRateBurst),
+		authFailLimiter: newKeyedLimiter(authFailRateLimit, authFailBurst),
+	}
 	// マイグレーションに失敗したまま起動すると全APIが500になるため、ここで止める
 	if err := h.db.AutoMigrate(&Todo{}); err != nil {
 		log.Fatal("failed to migrate database: ", err)
@@ -422,13 +432,17 @@ func main() {
 	// サーバー起動
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", h.getTop)
-	mux.Handle("GET /todos", h.authMiddleware(http.HandlerFunc(h.getTodos)))
-	mux.Handle("GET /todos/{id}", h.authMiddleware(http.HandlerFunc(h.getTodo)))
-	mux.Handle("POST /todos", h.authMiddleware(http.HandlerFunc(h.createTodo)))
-	mux.Handle("PATCH /todos/{id}", h.authMiddleware(http.HandlerFunc(h.updateTodo)))
-	mux.Handle("PUT /todos/order", h.authMiddleware(http.HandlerFunc(h.reorderTodos)))
-	mux.Handle("DELETE /todos/{id}", h.authMiddleware(http.HandlerFunc(h.deleteTodo)))
-	mux.Handle("DELETE /todos/completed", h.authMiddleware(http.HandlerFunc(h.deleteCompleted)))
+	// 認証とユーザーごとのレート制限をかけたハンドラーにする
+	protected := func(f http.HandlerFunc) http.Handler {
+		return h.authMiddleware(h.rateLimitMiddleware(f))
+	}
+	mux.Handle("GET /todos", protected(h.getTodos))
+	mux.Handle("GET /todos/{id}", protected(h.getTodo))
+	mux.Handle("POST /todos", protected(h.createTodo))
+	mux.Handle("PATCH /todos/{id}", protected(h.updateTodo))
+	mux.Handle("PUT /todos/order", protected(h.reorderTodos))
+	mux.Handle("DELETE /todos/{id}", protected(h.deleteTodo))
+	mux.Handle("DELETE /todos/completed", protected(h.deleteCompleted))
 	// 遅いクライアントに接続を占有され続けないよう、各種タイムアウトを設定する
 	server := &http.Server{
 		Addr:              ":" + port,
