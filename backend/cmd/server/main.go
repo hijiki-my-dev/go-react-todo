@@ -317,7 +317,7 @@ func (h *Handler) reorderTodos(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		IDs []uint `json:"ids"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) > 500 {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.IDs) > maxTodosPerUser {
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
