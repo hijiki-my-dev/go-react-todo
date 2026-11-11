@@ -25,7 +25,7 @@ jobs:
           flags: >
             --allow-unauthenticated
             --set-secrets=DATABASE_URL=DATABASE_URL:latest
-            --set-env-vars=CORS_ORIGIN=${{ secrets.FIREBASE_HOSTING_URL }}
+            --set-env-vars=CORS_ORIGIN=${{ secrets.FIREBASE_HOSTING_URL }},GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}
 
   deploy-frontend:
     runs-on: ubuntu-latest
@@ -46,6 +46,11 @@ jobs:
         working-directory: ./frontend
         env:
           VITE_API_BASE_URL: ${{ secrets.CLOUD_RUN_URL }}
+          # Firebase Authentication の設定（ローカルでは frontend/.env.local に記載）
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

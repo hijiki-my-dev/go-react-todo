@@ -23,10 +23,12 @@ backend/bin/
 backend/tmp/
 backend/coverage.out
 backend/*.test
+backend/server
 
 # Secrets
 github-actions-key.json
 firebase-sa-key.json
+firebase-auth-sa-key.json
 
 # IDE/editor
 .vscode/
@@ -34,3 +36,5 @@ firebase-sa-key.json
 
 
 コマンドまとめ.md
+デプロイ方法.md
+*copy*

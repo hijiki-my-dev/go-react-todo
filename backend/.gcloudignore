@@ -1,0 +1,8 @@
+# ビルドコンテキスト/アップロード対象から秘密情報とローカル生成物を除外
+.env
+.env.*
+*-sa-key.json
+*-key.json
+server
+tmp/
+.DS_Store
