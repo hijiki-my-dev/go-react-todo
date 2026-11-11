@@ -1,8 +1,7 @@
-import './App.css'
-
 import Home from './pages/home.tsx'
 import Login from './pages/login.tsx'
 import ProtectedRoute from './auth/ProtectedRoute.tsx'
+import AppLayout from './layouts/AppLayout.tsx'
 import { Routes, Route, Navigate } from 'react-router'
 
 function App() {
@@ -13,7 +12,9 @@ function App() {
 
       {/* ログイン必須のページ。この中に Route を足せば全部守られる */}
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<Home />} />
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Home />} />
+        </Route>
       </Route>
 
       {/* 存在しないURLはトップへ */}

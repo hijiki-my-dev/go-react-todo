@@ -1,8 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { signOut } from 'firebase/auth'
-import { auth } from '../firebase'
+import { useState, useEffect } from 'react'
 import { api } from '../api'
-import '../App.css'
 
 type Todo = {
     id: number
@@ -11,26 +8,6 @@ type Todo = {
 }
 
 function Home() {
-  const [isSigningOut, setIsSigningOut] = useState(false)
-  const [logoutError, setLogoutError] = useState('')
-  const signingOut = useRef(false)
-
-  async function handleLogout() {
-    if (signingOut.current) return
-    signingOut.current = true
-    setIsSigningOut(true)
-    setLogoutError('')
-    try {
-      await signOut(auth)
-      // ProtectedRouteが未ログイン状態を検知してログイン画面へ戻す
-    } catch {
-      setLogoutError('ログアウトに失敗しました。もう一度お試しください。')
-    } finally {
-      signingOut.current = false
-      setIsSigningOut(false)
-    }
-  }
-
   const [todos, setTodos] = useState<Todo[]>([])
   const [title, setTitle] = useState('')
   // 編集中のTodo IDと入力中のタイトルを管理するstate
@@ -98,21 +75,9 @@ function Home() {
 
   return (
     <>
-      <section id='top'>
-        <div>
-          <ul>
-            <li></li>
-            <li></li>
-          </ul>
-        </div>
-      </section>
       <section id="center">
         <div>
-          <h1>Go×React Todo アプリ</h1>
-          <button type="button" onClick={handleLogout} disabled={isSigningOut} aria-busy={isSigningOut}>
-            {isSigningOut ? 'ログアウト中...' : 'ログアウト'}
-          </button>
-          {logoutError && <p role="alert">{logoutError}</p>}
+          <h1 className="mb-4 text-2xl font-bold">メイン</h1>
           <form onSubmit={handleSubmit}>
             <label>
                 新規Todo: <input name="newTodo" value={title} onChange={(e) => setTitle(e.target.value)} />
