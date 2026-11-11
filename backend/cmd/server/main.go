@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"unicode/utf8"
 )
 
 // Todoの種類。single: 個別タスク、weekly/monthly: 定期タスク
@@ -27,6 +28,28 @@ const (
 
 func isValidKind(kind string) bool {
 	return kind == KindSingle || kind == KindWeekly || kind == KindMonthly
+}
+
+// タイトルの最大文字数（フロントのmaxLengthと揃える）
+const maxTitleLength = 200
+
+// リクエストボディの最大サイズ。Todo APIのボディは小さいので64KBあれば十分
+const maxBodyBytes = 64 << 10
+
+// タイトルが空でなく、上限文字数以内かを確認する
+func isValidTitle(title string) bool {
+	if strings.TrimSpace(title) == "" {
+		return false
+	}
+	return utf8.RuneCountInString(title) <= maxTitleLength
+}
+
+// 巨大なリクエストボディでメモリを使い切られないよう、読み取るサイズを制限する
+func bodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Todoの形式を定義
@@ -99,6 +122,10 @@ func (h *Handler) createTodo(w http.ResponseWriter, r *http.Request) {
 	// データ受信・例外処理
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if !isValidTitle(body.Title) {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid title"})
 		return
 	}
 	if body.Kind == "" {
@@ -184,6 +211,10 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uint(id64)
 
+	if body.Title != nil && !isValidTitle(*body.Title) {
+		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid title"})
+		return
+	}
 	if body.Title != nil {
 		_, err = gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).Update(r.Context(), "Title", *body.Title)
 		if err != nil {
@@ -370,5 +401,5 @@ func main() {
 	mux.Handle("PUT /todos/order", h.authMiddleware(http.HandlerFunc(h.reorderTodos)))
 	mux.Handle("DELETE /todos/{id}", h.authMiddleware(http.HandlerFunc(h.deleteTodo)))
 	mux.Handle("DELETE /todos/completed", h.authMiddleware(http.HandlerFunc(h.deleteCompleted)))
-	http.ListenAndServe(":"+port, corsMiddleware(corsOrigin, mux))
+	http.ListenAndServe(":"+port, corsMiddleware(corsOrigin, bodyLimitMiddleware(mux)))
 }
