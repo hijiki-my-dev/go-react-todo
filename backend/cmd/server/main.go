@@ -428,5 +428,16 @@ func main() {
 	mux.Handle("PUT /todos/order", h.authMiddleware(http.HandlerFunc(h.reorderTodos)))
 	mux.Handle("DELETE /todos/{id}", h.authMiddleware(http.HandlerFunc(h.deleteTodo)))
 	mux.Handle("DELETE /todos/completed", h.authMiddleware(http.HandlerFunc(h.deleteCompleted)))
-	http.ListenAndServe(":"+port, corsMiddleware(corsOrigin, bodyLimitMiddleware(mux)))
+	// 遅いクライアントに接続を占有され続けないよう、各種タイムアウトを設定する
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           corsMiddleware(corsOrigin, bodyLimitMiddleware(mux)),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatal("server stopped: ", err)
+	}
 }
