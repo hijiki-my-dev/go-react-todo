@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"io"
 	"log"
 	"net/http"
@@ -218,12 +219,10 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid title"})
 		return
 	}
+	// 変更する列をまとめ、1回のUPDATEで更新後の行も受け取る（DBとの往復を1回にする）
+	updates := map[string]any{}
 	if body.Title != nil {
-		_, err = gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).Update(r.Context(), "Title", *body.Title)
-		if err != nil {
-			writeInternalError(w, r, err)
-			return
-		}
+		updates["title"] = *body.Title
 	}
 	if body.Done != nil {
 		// 完了にした日時を記録する。定期タスクは「今週/今月に完了したか」の判定に使う
@@ -232,17 +231,29 @@ func (h *Handler) updateTodo(w http.ResponseWriter, r *http.Request) {
 			now := time.Now()
 			doneAt = &now
 		}
-		err = h.db.WithContext(r.Context()).Model(&Todo{}).
-			Where("id = ? AND user_id = ?", id, uid).
-			Updates(map[string]any{"done": *body.Done, "done_at": doneAt}).Error
-		if err != nil {
-			writeInternalError(w, r, err)
-			return
-		}
+		updates["done"] = *body.Done
+		updates["done_at"] = doneAt
 	}
 
-	todo, err := gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).First(r.Context())
-	if err != nil {
+	// 変更がなければ現在の値を返すだけ
+	if len(updates) == 0 {
+		todo, err := gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).First(r.Context())
+		if err != nil {
+			writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJson(w, http.StatusOK, todo)
+		return
+	}
+
+	var todo Todo
+	result := h.db.WithContext(r.Context()).Model(&todo).Clauses(clause.Returning{}).
+		Where("id = ? AND user_id = ?", id, uid).Updates(updates)
+	if result.Error != nil {
+		writeInternalError(w, r, result.Error)
+		return
+	}
+	if result.RowsAffected == 0 {
 		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
