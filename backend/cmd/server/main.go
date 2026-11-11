@@ -30,16 +30,14 @@ func isValidKind(kind string) bool {
 }
 
 // Todoの形式を定義
-// DeletedAtを持たせるとGORMの論理削除になり、通常の検索から除外される（=ゴミ箱）
 type Todo struct {
-	ID        uint           `json:"id"    gorm:"primaryKey"`
-	UserID    string         `json:"-" gorm:"index;not null"`
-	Title     string         `json:"title"`
-	Done      bool           `json:"done"`
-	Kind      string         `json:"kind" gorm:"not null;default:single"`
-	Position  int            `json:"position" gorm:"not null;default:0"`
-	DoneAt    *time.Time     `json:"doneAt"`
-	DeletedAt gorm.DeletedAt `json:"deletedAt" gorm:"index"`
+	ID       uint       `json:"id"    gorm:"primaryKey"`
+	UserID   string     `json:"-" gorm:"index;not null"`
+	Title    string     `json:"title"`
+	Done     bool       `json:"done"`
+	Kind     string     `json:"kind" gorm:"not null;default:single"`
+	Position int        `json:"position" gorm:"not null;default:0"`
+	DoneAt   *time.Time `json:"doneAt"`
 }
 
 type Handler struct {
@@ -140,21 +138,6 @@ func (h *Handler) getTodos(w http.ResponseWriter, r *http.Request) {
 	writeJson(w, http.StatusOK, todos)
 }
 
-// ゴミ箱（論理削除済み）のTodo一覧
-func (h *Handler) getTrash(w http.ResponseWriter, r *http.Request) {
-	uid, _ := userIDFromContext(r.Context())
-
-	var todos []Todo
-	err := h.db.WithContext(r.Context()).Unscoped().
-		Where("user_id = ? AND deleted_at IS NOT NULL", uid).
-		Order("deleted_at DESC").Find(&todos).Error
-	if err != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJson(w, http.StatusOK, todos)
-}
-
 func (h *Handler) getTodo(w http.ResponseWriter, r *http.Request) {
 	uid, _ := userIDFromContext(r.Context())
 
@@ -241,7 +224,6 @@ func parseID(r *http.Request) (uint, bool) {
 	return uint(id64), true
 }
 
-// 通常はゴミ箱へ移動（論理削除）。?permanent=true なら完全に削除する
 func (h *Handler) deleteTodo(w http.ResponseWriter, r *http.Request) {
 	uid, _ := userIDFromContext(r.Context())
 
@@ -251,11 +233,7 @@ func (h *Handler) deleteTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db := h.db.WithContext(r.Context())
-	if r.URL.Query().Get("permanent") == "true" {
-		db = db.Unscoped()
-	}
-	result := db.Where("id = ? AND user_id = ?", id, uid).Delete(&Todo{})
+	result := h.db.WithContext(r.Context()).Where("id = ? AND user_id = ?", id, uid).Delete(&Todo{})
 	if result.Error != nil {
 		writeJson(w, http.StatusInternalServerError, map[string]string{"error": result.Error.Error()})
 		return
@@ -267,54 +245,11 @@ func (h *Handler) deleteTodo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ゴミ箱から元に戻す
-func (h *Handler) restoreTodo(w http.ResponseWriter, r *http.Request) {
-	uid, _ := userIDFromContext(r.Context())
-
-	id, ok := parseID(r)
-	if !ok {
-		writeJson(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
-		return
-	}
-
-	result := h.db.WithContext(r.Context()).Unscoped().Model(&Todo{}).
-		Where("id = ? AND user_id = ? AND deleted_at IS NOT NULL", id, uid).
-		Update("deleted_at", nil)
-	if result.Error != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": result.Error.Error()})
-		return
-	}
-	if result.RowsAffected == 0 {
-		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
-		return
-	}
-
-	todo, err := gorm.G[Todo](h.db).Where("id = ? AND user_id = ?", id, uid).First(r.Context())
-	if err != nil {
-		writeJson(w, http.StatusNotFound, map[string]string{"error": "not found"})
-		return
-	}
-	writeJson(w, http.StatusOK, todo)
-}
-
-// ゴミ箱を空にする
-func (h *Handler) emptyTrash(w http.ResponseWriter, r *http.Request) {
-	uid, _ := userIDFromContext(r.Context())
-
-	err := h.db.WithContext(r.Context()).Unscoped().
-		Where("user_id = ? AND deleted_at IS NOT NULL", uid).Delete(&Todo{}).Error
-	if err != nil {
-		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// 完了済みの個別タスクをすべて完全に削除する
+// 完了済みの個別タスクをすべて削除する
 func (h *Handler) deleteCompleted(w http.ResponseWriter, r *http.Request) {
 	uid, _ := userIDFromContext(r.Context())
 
-	err := h.db.WithContext(r.Context()).Unscoped().
+	err := h.db.WithContext(r.Context()).
 		Where("user_id = ? AND kind = ? AND done = ?", uid, KindSingle, true).Delete(&Todo{}).Error
 	if err != nil {
 		writeJson(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -409,6 +344,19 @@ func main() {
 	if err := h.db.AutoMigrate(&Todo{}); err != nil {
 		log.Fatal("failed to migrate database: ", err)
 	}
+	// ゴミ箱機能の廃止に伴い、ゴミ箱に残っていたTodoを削除してから列を消す
+	// （列を残したままだと論理削除済みのTodoが一覧に戻ってきてしまう）
+	if h.db.Migrator().HasColumn(&Todo{}, "deleted_at") {
+		err := h.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec("DELETE FROM todos WHERE deleted_at IS NOT NULL").Error; err != nil {
+				return err
+			}
+			return tx.Migrator().DropColumn(&Todo{}, "deleted_at")
+		})
+		if err != nil {
+			log.Fatal("failed to drop deleted_at column: ", err)
+		}
+	}
 
 	corsOrigin := os.Getenv("CORS_ORIGIN")
 
@@ -416,14 +364,11 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", h.getTop)
 	mux.Handle("GET /todos", h.authMiddleware(http.HandlerFunc(h.getTodos)))
-	mux.Handle("GET /todos/trash", h.authMiddleware(http.HandlerFunc(h.getTrash)))
 	mux.Handle("GET /todos/{id}", h.authMiddleware(http.HandlerFunc(h.getTodo)))
 	mux.Handle("POST /todos", h.authMiddleware(http.HandlerFunc(h.createTodo)))
 	mux.Handle("PATCH /todos/{id}", h.authMiddleware(http.HandlerFunc(h.updateTodo)))
 	mux.Handle("PUT /todos/order", h.authMiddleware(http.HandlerFunc(h.reorderTodos)))
 	mux.Handle("DELETE /todos/{id}", h.authMiddleware(http.HandlerFunc(h.deleteTodo)))
-	mux.Handle("POST /todos/{id}/restore", h.authMiddleware(http.HandlerFunc(h.restoreTodo)))
-	mux.Handle("DELETE /todos/trash", h.authMiddleware(http.HandlerFunc(h.emptyTrash)))
 	mux.Handle("DELETE /todos/completed", h.authMiddleware(http.HandlerFunc(h.deleteCompleted)))
 	http.ListenAndServe(":"+port, corsMiddleware(corsOrigin, mux))
 }
