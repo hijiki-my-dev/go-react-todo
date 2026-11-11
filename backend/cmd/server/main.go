@@ -413,20 +413,6 @@ func main() {
 	if err := h.db.AutoMigrate(&Todo{}); err != nil {
 		log.Fatal("failed to migrate database: ", err)
 	}
-	// ゴミ箱機能の廃止に伴い、ゴミ箱に残っていたTodoを削除してから列を消す
-	// （列を残したままだと論理削除済みのTodoが一覧に戻ってきてしまう）
-	if h.db.Migrator().HasColumn(&Todo{}, "deleted_at") {
-		err := h.db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec("DELETE FROM todos WHERE deleted_at IS NOT NULL").Error; err != nil {
-				return err
-			}
-			return tx.Migrator().DropColumn(&Todo{}, "deleted_at")
-		})
-		if err != nil {
-			log.Fatal("failed to drop deleted_at column: ", err)
-		}
-	}
-
 	corsOrigin := os.Getenv("CORS_ORIGIN")
 
 	// サーバー起動
